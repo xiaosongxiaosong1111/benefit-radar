@@ -6,6 +6,9 @@ data/
 .env
 *.sqlite*
 .env.*
+*.env
+master.key
+*.credentials
 .venv/
 node_modules/
 .pytest_cache/

@@ -42,15 +42,20 @@ def _changes(before: str, after: str) -> list[dict[str, str]]:
 
 
 class PolicyService:
-    def __init__(self, db_path: Path | str, *, clock: Callable[[], datetime] | None = None):
+    def __init__(self, db_path: Path | str, *, clock: Callable[[], datetime] | None = None,
+                 searcher: Callable | None = None, status_provider: Callable | None = None,
+                 persist_profile: bool = False):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.searcher = searcher
+        self.status_provider = status_provider
+        self.persist_profile = persist_profile
         self.lock = threading.RLock()
         self.check_lock = threading.Lock()
         self.stop_event = threading.Event()
         self.monitor: threading.Thread | None = None
-        self.search_cache: dict[tuple[str, str | None, bool], tuple[float, dict]] = {}
+        self.search_cache: dict[tuple, tuple[float, dict]] = {}
         with self._connection() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS follows (
@@ -110,19 +115,20 @@ class PolicyService:
         policy = get_policy(policy_id)
         if not isinstance(updates, dict) or not updates or not set(updates) <= {"status", "checked_materials"}:
             raise ServiceValidationError("invalid_request", "请提供申请状态或材料勾选记录。")
-        existing = next((item for item in self.list_follows() if item["policy_id"] == policy_id), None)
-        if existing is None:
-            raise ServiceValidationError("not_found", "请先关注这项政策。")
-        state = updates.get("status", existing["status"])
-        checked = updates.get("checked_materials", existing["checked_materials"])
-        allowed = {item["id"] for item in policy["materials"]}
-        if not isinstance(state, str) or state not in FOLLOW_STATES:
-            raise ServiceValidationError("invalid_request", "申请状态无效。")
-        if not isinstance(checked, list) or any(not isinstance(value, str) or value not in allowed for value in checked) or len(set(checked)) != len(checked):
-            raise ServiceValidationError("invalid_request", "材料勾选记录无效。")
-        with self.lock, self._connection() as db:
-            db.execute("UPDATE follows SET status = ?, checked_materials = ?, updated_at = ? WHERE policy_id = ?", (state, json.dumps(checked), self._now(), policy_id))
-        return next(item for item in self.list_follows() if item["policy_id"] == policy_id)
+        with self.lock:
+            existing = next((item for item in self.list_follows() if item["policy_id"] == policy_id), None)
+            if existing is None:
+                raise ServiceValidationError("not_found", "请先关注这项政策。")
+            state = updates.get("status", existing["status"])
+            checked = updates.get("checked_materials", existing["checked_materials"])
+            allowed = {item["id"] for item in policy["materials"]}
+            if not isinstance(state, str) or state not in FOLLOW_STATES:
+                raise ServiceValidationError("invalid_request", "申请状态无效。")
+            if not isinstance(checked, list) or any(not isinstance(value, str) or value not in allowed for value in checked) or len(set(checked)) != len(checked):
+                raise ServiceValidationError("invalid_request", "材料勾选记录无效。")
+            with self._connection() as db:
+                db.execute("UPDATE follows SET status = ?, checked_materials = ?, updated_at = ? WHERE policy_id = ?", (state, json.dumps(checked), self._now(), policy_id))
+            return next(item for item in self.list_follows() if item["policy_id"] == policy_id)
 
     def unfollow(self, policy_id: str) -> bool:
         get_policy(policy_id)
@@ -186,15 +192,18 @@ class PolicyService:
         return enriched
 
     def bootstrap(self) -> dict:
-        status = source_status()
+        status = self._source_status()
         return {
             "city": "天津", "policies": self.enrich_policies(get_catalog()), "follows": self.list_follows(),
             "notifications": self.notifications(), "now": self._now(),
             "service": {"search_configured": bool(status.get("configured")), "monitor_running": bool(self.monitor and self.monitor.is_alive()), "last_checked_at": self._get_setting("last_checked_at"), "check_interval_seconds": CHECK_INTERVAL_SECONDS},
+            **({"profile": self._get_setting("profile")} if self.persist_profile else {}),
         }
 
     def discover(self, profile: dict) -> dict:
         policies = self.enrich_policies(match_policies(profile, today=self.clock().astimezone(CHINA).date()))
+        if self.persist_profile:
+            self._setting("profile", dict(profile))
         # Search receives only public policy keywords, never the visitor's answers.
         query = "天津市 高校毕业生 求职补贴 灵活就业社会保险补贴 申请 官方政策"
         try:
@@ -204,14 +213,19 @@ class PolicyService:
         self._record_search(evidence)
         return {"policies": policies, "search": evidence}
 
+    def _source_status(self) -> dict:
+        return self.status_provider() if self.status_provider is not None else source_status()
+
     def _search(self, query: str, freshness: str | None = None) -> dict:
-        key = (query, freshness, bool(source_status().get("configured")))
+        status = self._source_status()
+        key = (query, freshness, bool(status.get("configured")), status.get("revision", 0))
         now = time.monotonic()
         with self.lock:
             cached = self.search_cache.get(key)
         if cached and now - cached[0] < 300:
             return {**cached[1], "cached": True}
-        result = {**search_official(query, freshness=freshness), "cached": False, "checked_at": self._now()}
+        searcher = self.searcher if self.searcher is not None else search_official
+        result = {**searcher(query, freshness=freshness), "cached": False, "checked_at": self._now()}
         with self.lock:
             self.search_cache = {item: value for item, value in self.search_cache.items() if now - value[0] < 300}
             self.search_cache[key] = (now, result)
@@ -291,10 +305,10 @@ class PolicyService:
             policies = [get_policy(item["policy_id"]) for item in self.list_follows() if item["status"] != "completed"]
             with ThreadPoolExecutor(max_workers=3) as pool:
                 results = list(pool.map(self._check_document, policies))
-                searches = list(pool.map(self._check_search, policies)) if source_status().get("configured") else []
+                searches = list(pool.map(self._check_search, policies)) if self._source_status().get("configured") else []
             checked_at = self._now()
             self._setting("last_checked_at", checked_at)
-            return {"notifications": self.notifications(), "checked_at": checked_at, "results": results, "search_status": {"configured": bool(source_status().get("configured")), "runs": searches}}
+            return {"notifications": self.notifications(), "checked_at": checked_at, "results": results, "search_status": {"configured": bool(self._source_status().get("configured")), "runs": searches}}
         finally:
             self.check_lock.release()
 

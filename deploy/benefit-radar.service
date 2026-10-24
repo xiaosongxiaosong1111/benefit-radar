@@ -1,0 +1,31 @@
+[Unit]
+Description=Benefit Radar account-isolated policy assistant
+After=network.target
+
+[Service]
+Type=simple
+User=benefitradar
+Group=benefitradar
+WorkingDirectory=/opt/benefit-radar/current
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/benefit-radar/venv/bin/python policy_server.py --accounts --public-origin https://benefit-radar.47-120-19-14.sslip.io --data-dir /var/lib/benefit-radar --port 44173
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/benefit-radar
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+MemoryMax=384M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

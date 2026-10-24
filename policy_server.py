@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import mimetypes
 import re
@@ -14,6 +15,7 @@ from urllib.parse import unquote, urlsplit
 from policy_catalog import get_policy
 from policy_core import PolicyValidationError, build_checklist
 from policy_service import PolicyService, ServiceValidationError
+from policy_auth_http import AccountHTTP, AuthHTTPError, PUBLIC_AUTH_WRITES
 
 
 MAX_REQUEST_BYTES = 16 * 1024
@@ -75,9 +77,16 @@ class PolicyHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, static_root: Path, service: PolicyService):
+    def __init__(self, address, static_root: Path, service: PolicyService | None, *, accounts=None, tenants=None, public_origin=None):
         self.static_root = static_root.resolve(strict=True)
         self.service = service
+        self.accounts = accounts
+        self.tenants = tenants
+        self.public_origin = public_origin
+        self.account_errors = (AuthHTTPError,)
+        if accounts is not None:
+            from policy_accounts import AccountError
+            self.account_errors += (AccountError,)
         self.rate_lock = threading.Lock()
         self.requests_by_route: dict[str, list[float]] = {}
         super().__init__(address, PolicyHandler)
@@ -88,18 +97,34 @@ class PolicyHTTPServer(ThreadingHTTPServer):
         return connection, address
 
     def server_close(self):
-        self.service.close()
+        if self.tenants is not None:
+            self.tenants.close()
+        if self.service is not None:
+            self.service.close()
         super().server_close()
 
-    def allow_request(self, path: str) -> bool:
+    def allow_request(self, path: str, *, actor=None, client="local", username="") -> bool:
         now = time.monotonic()
         # Bound paid/network operations separately from inexpensive local checklist updates.
         limit, window = (30, 60) if path == "/api/discover" else (2, 60) if path == "/api/check-updates" else (120, 60)
         key = path if path in {"/api/discover", "/api/check-updates"} else "local"
+        buckets = [(key, limit)]
+        if self.accounts is not None:
+            if path in PUBLIC_AUTH_WRITES:
+                buckets = [("auth-ip:" + client, 10), ("auth-name:" + username, 5)]
+            elif path == "/api/account/api-key/verify":
+                buckets = [("verify-ip:" + client, 10), ("verify-user:" + actor, 3)]
+            else:
+                buckets = [(key + ":" + actor, limit)]
         with self.rate_lock:
-            recent = [moment for moment in self.requests_by_route.get(key, []) if now - moment < window]
-            self.requests_by_route[key] = [*recent, now] if len(recent) < limit else recent
-            return len(recent) < limit
+            self.requests_by_route = {name: moments for name, moments in self.requests_by_route.items() if moments and now - moments[-1] < window}
+            if len(self.requests_by_route) >= 4096 and any(name not in self.requests_by_route for name, _ in buckets):
+                return False
+            recent = {name: [moment for moment in self.requests_by_route.get(name, []) if now - moment < window] for name, _ in buckets}
+            allowed = all(len(recent[name]) < cap for name, cap in buckets)
+            for name, _ in buckets:
+                self.requests_by_route[name] = [*recent[name], now] if allowed else recent[name]
+            return allowed
 
 
 class PolicyHandler(BaseHTTPRequestHandler):
@@ -110,7 +135,7 @@ class PolicyHandler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         return
 
-    def _send(self, status: int, body: bytes, content_type: str, *, api=True):
+    def _send(self, status: int, body: bytes, content_type: str, *, api=True, headers=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
@@ -119,6 +144,10 @@ class PolicyHandler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Cache-Control", "no-store" if api else "no-cache")
+        if getattr(self, "account_session", None):
+            self.send_header("X-Account-Id", self.account_session["user"]["id"])
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         if self.command != "HEAD":
             try:
@@ -126,8 +155,8 @@ class PolicyHandler(BaseHTTPRequestHandler):
             except OSError:
                 self.close_connection = True
 
-    def _json(self, status: int, value):
-        self._send(status, json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), "application/json; charset=utf-8")
+    def _json(self, status: int, value, *, headers=None):
+        self._send(status, json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), "application/json; charset=utf-8", headers=headers)
 
     def _error(self, status: int, code: str, message: str):
         self._json(status, {"error": {"code": code, "message": message}})
@@ -138,8 +167,18 @@ class PolicyHandler(BaseHTTPRequestHandler):
             return False
         origins = self.headers.get_all("Origin", [])
         if not origins:
-            return self.headers.get("Sec-Fetch-Site", "") != "cross-site"
-        return len(origins) == 1 and origins[0].lower() == "http://" + hosts[0].lower()
+            if self.headers.get("Sec-Fetch-Site", "") != "cross-site":
+                return True
+            try:
+                api_path = self._path().startswith("/api/")
+            except RequestError:
+                return False
+            return bool(self.server.public_origin and self.command in {"GET", "HEAD"}
+                        and not api_path and self.headers.get("Sec-Fetch-Mode") == "navigate")
+        allowed = {"http://" + hosts[0].lower()}
+        if self.server.public_origin:
+            allowed.add(self.server.public_origin)
+        return len(origins) == 1 and origins[0].lower() in allowed
 
     def _path(self) -> str:
         try:
@@ -155,18 +194,27 @@ class PolicyHandler(BaseHTTPRequestHandler):
         return True
 
     def do_GET(self):
+        self.account_session = None
         if not self._guard():
             return
         try:
             path = self._path()
+            auth = AccountHTTP(self)
+            if auth.handle_get(path):
+                return
+            session = auth.require_session() if self.server.accounts and path.startswith("/api/") and path != "/api/health" else None
+            service = self.server.tenants.service_for(session["user"]["id"]) if session else self.server.service
             if path == "/api/health":
                 self._json(200, {"status": "ok"})
             elif path == "/api/bootstrap":
-                self._json(200, self.server.service.bootstrap())
+                data = service.bootstrap()
+                if self.server.tenants is not None:
+                    data = {**data, "service": {**data["service"], "monitor_running": self.server.tenants.monitor_running}}
+                self._json(200, data)
             elif path.startswith("/api/policies/"):
                 policy_id = path.removeprefix("/api/policies/")
-                policy = self.server.service.enrich_policies([get_policy(policy_id)])[0]
-                follow = next((value for value in self.server.service.list_follows() if value["policy_id"] == policy_id), None)
+                policy = service.enrich_policies([get_policy(policy_id)])[0]
+                follow = next((value for value in service.list_follows() if value["policy_id"] == policy_id), None)
                 self._json(200, {"policy": policy, "follow": follow})
             elif path.startswith("/api/"):
                 self._error(404, "not_found", "未找到这个接口。")
@@ -175,6 +223,8 @@ class PolicyHandler(BaseHTTPRequestHandler):
         except (PolicyValidationError, ServiceValidationError):
             self._error(404, "not_found", "未找到这项政策。")
         except RequestError as error:
+            self._error(error.status, error.code, str(error))
+        except self.server.account_errors as error:
             self._error(error.status, error.code, str(error))
         except Exception:
             self._error(500, "request_failed", "暂时无法读取本机数据，请稍后重试。")
@@ -191,6 +241,12 @@ class PolicyHandler(BaseHTTPRequestHandler):
             raise RequestError("invalid_request", "请求长度无效。")
         length = int(lengths[0])
         if length > MAX_REQUEST_BYTES:
+            # Drain only small overruns so closing the connection does not erase the 413 response.
+            if length <= MAX_REQUEST_BYTES * 2:
+                try:
+                    self.rfile.read(length)
+                except (OSError, TimeoutError):
+                    pass
             raise RequestError("request_too_large", "请求内容超过大小限制。", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
         try:
             body = self.rfile.read(length)
@@ -216,8 +272,8 @@ class PolicyHandler(BaseHTTPRequestHandler):
         facts = _validate_facts(payload["facts"], legacy=True)
         return analyze_policy_request(city=payload["city"], matter=payload["matter"], facts=facts)
 
-    def _write_route(self, path: str, payload: dict):
-        service = self.server.service
+    def _write_route(self, path: str, payload: dict, *, session=None):
+        service = self.server.tenants.service_for(session["user"]["id"]) if session else self.server.service
         if self.command == "POST" and path == "/api/analyze":
             return self._legacy_analyze(payload)
         if self.command == "POST" and path == "/api/discover":
@@ -245,14 +301,25 @@ class PolicyHandler(BaseHTTPRequestHandler):
         raise RequestError("not_found", "未找到这个接口。", HTTPStatus.NOT_FOUND)
 
     def _write(self):
+        self.account_session = None
         if not self._guard():
             return
         try:
             path = self._path()
-            if not self.server.allow_request(path):
+            auth = AccountHTTP(self)
+            session = auth.require_session(write=True) if self.server.accounts and path not in PUBLIC_AUTH_WRITES else None
+            payload = self._body()
+            username = payload.get("username", "")
+            username = username.casefold() if isinstance(username, str) and len(username) <= 32 else "invalid"
+            actor = session["user"]["id"] if session else "anonymous"
+            if not self.server.allow_request(path, actor=actor, client=self._client_ip(), username=username):
                 raise RequestError("rate_limited", "操作太频繁，请稍等一分钟。", HTTPStatus.TOO_MANY_REQUESTS)
-            self._json(200, self._write_route(path, self._body()))
+            if not auth.handle_write(path, payload, session):
+                self._json(200, self._write_route(path, payload, session=session))
         except RequestError as error:
+            self.close_connection = True
+            self._error(error.status, error.code, str(error))
+        except self.server.account_errors as error:
             self.close_connection = True
             self._error(error.status, error.code, str(error))
         except ServiceValidationError as error:
@@ -266,6 +333,16 @@ class PolicyHandler(BaseHTTPRequestHandler):
     do_POST = _write
     do_PATCH = _write
     do_DELETE = _write
+
+    def _client_ip(self):
+        address = self.client_address[0]
+        forwarded = self.headers.get_all("X-Real-IP", [])
+        if self.server.public_origin and ipaddress.ip_address(address).is_loopback and len(forwarded) == 1:
+            try:
+                return str(ipaddress.ip_address(forwarded[0]))
+            except ValueError:
+                pass
+        return address
 
     def _static(self, path: str):
         try:
@@ -287,10 +364,32 @@ class PolicyHandler(BaseHTTPRequestHandler):
         self._send(200, target.read_bytes(), media, api=False)
 
 
-def create_server(*, port: int = 4173, static_root: Path | str | None = None, db_path: Path | str | None = None, start_monitor: bool = False) -> PolicyHTTPServer:
+def _public_origin(value, *, accounts):
+    if value is None:
+        return None
+    parsed = urlsplit(value)
+    if not accounts or parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment or any(char.isspace() for char in value):
+        raise ValueError("public_origin must be an HTTPS origin in account mode.")
+    hostname = parsed.hostname.encode("idna").decode().lower()
+    hostname = "[" + hostname + "]" if ":" in hostname else hostname
+    return "https://" + hostname + (":" + str(parsed.port) if parsed.port and parsed.port != 443 else "")
+
+
+def create_server(*, port: int = 4173, static_root: Path | str | None = None, db_path: Path | str | None = None, start_monitor: bool = False, accounts: bool = False, public_origin: str | None = None, data_dir: Path | str | None = None) -> PolicyHTTPServer:
     base = Path(__file__).resolve().parent
     root = Path(static_root) if static_root is not None else base / "static"
-    state = Path(db_path) if db_path is not None else root / ".state.sqlite3" if static_root is not None else base / "data" / "policy.sqlite3"
+    origin = _public_origin(public_origin, accounts=accounts)
+    state = Path(db_path) if db_path is not None else Path(data_dir) / "policy.sqlite3" if data_dir is not None else root / ".state.sqlite3" if static_root is not None else base / "data" / "policy.sqlite3"
+    if accounts:
+        from policy_accounts import AccountStore
+        from policy_tenants import TenantServices
+        store = AccountStore(Path(data_dir) if data_dir is not None else state.parent)
+        tenants = TenantServices(store, start_monitor=start_monitor)
+        try:
+            return PolicyHTTPServer(("127.0.0.1", port), root, None, accounts=store, tenants=tenants, public_origin=origin)
+        except Exception:
+            tenants.close()
+            raise
     service = PolicyService(state)
     server = PolicyHTTPServer(("127.0.0.1", port), root, service)
     if start_monitor:
@@ -302,10 +401,16 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run the Tianjin policy guide locally.")
     parser.add_argument("--port", type=int, default=4173)
     parser.add_argument("--no-monitor", action="store_true")
+    parser.add_argument("--accounts", action="store_true")
+    parser.add_argument("--public-origin")
+    parser.add_argument("--data-dir", type=Path)
     args = parser.parse_args(argv)
     if not 1024 <= args.port <= 65535:
         parser.error("port must be between 1024 and 65535")
-    server = create_server(port=args.port, start_monitor=not args.no_monitor)
+    try:
+        server = create_server(port=args.port, start_monitor=not args.no_monitor, accounts=args.accounts, public_origin=args.public_origin, data_dir=args.data_dir)
+    except ValueError as error:
+        parser.error(str(error))
     print(f"天津权益雷达：http://127.0.0.1:{args.port}/", flush=True)
     print("政策监测仅在本机服务运行时执行。Ctrl+C 停止。", flush=True)
     try:

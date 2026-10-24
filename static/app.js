@@ -1,7 +1,8 @@
-/* global PolicyUI */
+/* global PolicyUI, PolicyAccount */
 (() => {
   'use strict';
   const ui = PolicyUI;
+  const account = PolicyAccount;
   const $ = id => document.getElementById(id);
   const profileKey = 'tianjin-rights-profile-v1';
   let state = { policies: [], follows: [], notifications: [], service: {}, profile: null, now: new Date().toISOString(), activeId: null, view: 'discover', step: 0, draft: {}, busy: false };
@@ -13,6 +14,7 @@
   let knownNotifications = new Set();
   let conditionDrafts = {};
   let editingConditions = null;
+  let bootstrapRevision = 0;
   const stageLabels = { student: '在校学生', graduate: '毕业 / 正在求职', employed: '已经就业', flexible: '灵活就业', other: '其他情况', unknown: '暂不确定' };
   const statusLabels = ui.stages;
   function node(tag, className, text) {
@@ -42,12 +44,19 @@
     $('error-copy').textContent = message; $('global-error').hidden = !message;
   }
   async function api(path, method = 'GET', payload) {
+    const generation = account.generation(); const actor = account.user()?.id;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), path.includes('updates') ? 65000 : 40000);
     try {
-      const response = await fetch(path, { method, cache: 'no-store', signal: controller.signal,
-        ...(payload !== undefined ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) } : {}) });
+      const response = await fetch(path, { method, cache: 'no-store', credentials: 'same-origin', signal: controller.signal,
+        headers: { ...account.headers(), ...(payload !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}) });
+      if (generation !== account.generation()) throw new Error('登录状态已更新，请在当前账户下重试。');
+      if (response.status === 401 && account.enabled()) { account.expire(); throw new Error('登录已过期，请重新登录。'); }
+      account.assertActor(response, actor);
       const data = await response.json().catch(() => null);
+      if (generation !== account.generation()) throw new Error('登录状态已更新，请在当前账户下重试。');
+      account.assertActor(response, actor);
       if (!response.ok) throw new Error(data?.error?.message || '操作暂时未完成，请稍后重试。');
       if (!data || typeof data !== 'object') throw new Error('服务返回了无法识别的数据，请重试。');
       return data;
@@ -58,10 +67,12 @@
     } finally { clearTimeout(timer); }
   }
   function readProfile() {
+    if (account.enabled()) return state.profile;
     try { const value = JSON.parse(localStorage.getItem(profileKey)); return value && typeof value === 'object' && !Array.isArray(value) ? value : null; }
     catch { return null; }
   }
   function storeProfile(profile) {
+    if (account.enabled()) return;
     try { localStorage.setItem(profileKey, JSON.stringify(profile)); }
     catch { notify('浏览器未允许保存情况，本次查询仍可使用。'); }
   }
@@ -89,7 +100,8 @@
     $('hero-title').replaceChildren(...(state.profile ? [document.createTextNode('每一份支持，'), node('br'), node('span', 'accent-word', '都值得看见。')] : [document.createTextNode('与你有关的，'), node('br'), document.createTextNode('替你'), node('span', 'accent-word', '留意着。')]));
     $('hero-description').textContent = state.profile ? '结合你提供的情况，整理值得留意的政策。尚未确认的条件，也会一项项说明。' : '补贴、保障、办事机会，从官方政策里，找到值得你关注的那一份。';
     $('profile-button').replaceChildren(document.createTextNode(state.profile ? '调整我的情况' : '看看我能申请什么'), node('span', '', '↗'));
-    $('profile-note').textContent = state.profile ? `${stageLabels[state.profile.stage] || '我的情况'} · 情况保存在当前浏览器` : '回答几个小问题 · 无需姓名、证件或联系方式';
+    $('profile-note').textContent = state.profile ? `${stageLabels[state.profile.stage] || '我的情况'} · ${account.enabled() ? '情况仅保存在你的账户' : '情况保存在当前浏览器'}` : '回答几个小问题 · 无需姓名、证件或联系方式';
+    document.querySelector('.wizard-privacy').textContent = account.enabled() ? '你的情况仅保存在当前账户。无需填写姓名、证件或联系方式。' : '你的情况仅保存在当前浏览器。不会上传姓名、证件或联系方式。';
     $('policy-list-title').textContent = state.profile ? '结合你的情况，值得留意' : '值得留意的支持';
     const possible = state.policies.filter(policy => policy.match?.status === 'possible').length;
     const pending = state.policies.filter(policy => policy.match?.status === 'needs_info').length;
@@ -161,7 +173,8 @@
       row.append(node('span', 'notification-dot'), body);
       if (!item.read) row.append(button('标为已读', 'text-button', async event => {
         const trigger = event.currentTarget; trigger.disabled = true;
-        try { await api(`/api/notifications/${encodeURIComponent(item.id)}`, 'PATCH', { read: true }); followRevision += 1; state = { ...state, notifications: state.notifications.map(value => value.id === item.id ? { ...value, read: true } : value) }; renderNotifications(); }
+        const generation = account.generation();
+        try { await api(`/api/notifications/${encodeURIComponent(item.id)}`, 'PATCH', { read: true }); if (generation !== account.generation()) return; followRevision += 1; state = { ...state, notifications: state.notifications.map(value => value.id === item.id ? { ...value, read: true } : value) }; renderNotifications(); }
         catch (error) { trigger.disabled = false; notify(error.message); }
       }));
       list.append(row);
@@ -232,7 +245,9 @@
     sources.append(record); note.append(sources);
   }
   async function discover(profile) {
+    const generation = account.generation();
     const result = await api('/api/discover', 'POST', { profile });
+    if (generation !== account.generation()) throw new Error('登录状态已更新，请在当前账户下重试。');
     if (!Array.isArray(result.policies)) throw new Error('政策数据暂时不可用，请稍后重试。');
     state = { ...state, profile: { ...profile }, policies: result.policies };
     storeProfile(profile); renderAll();
@@ -349,12 +364,16 @@
     $('policy-dialog').querySelectorAll('.question-item input,.question-submit,.condition-edit-button,#start-policy-check').forEach(item => { item.disabled = busy; });
   }
   async function saveFollow(patch, id = state.activeId) {
+    const generation = account.generation();
     followRevision += 1;
     if (!followFor(id)) {
-      const data = await api('/api/follows', 'POST', { policy_id: id }); state = { ...state, follows: [...state.follows.filter(item => item.policy_id !== id), data.follow] };
+      const data = await api('/api/follows', 'POST', { policy_id: id });
+      if (generation !== account.generation()) throw new Error('登录状态已更新，请在当前账户下重试。');
+      state = { ...state, follows: [...state.follows.filter(item => item.policy_id !== id), data.follow] };
     }
     if (patch) {
       const data = await api(`/api/follows/${encodeURIComponent(id)}`, 'PATCH', patch);
+      if (generation !== account.generation()) throw new Error('登录状态已更新，请在当前账户下重试。');
       state = { ...state, follows: state.follows.map(item => item.policy_id === id ? data.follow : item) };
     }
     renderAll();
@@ -423,9 +442,11 @@
     actions.append(button('导出申请清单 ↓', 'text-button', () => exportPolicy(policy)), button('取消关注', 'text-button danger-button', async event => {
       if (savingFollow) return;
       const trigger = event.currentTarget; setFollowBusy(true); trigger.disabled = true;
+      const generation = account.generation();
       followRevision += 1;
       try {
         await api(`/api/follows/${encodeURIComponent(policy.id)}`, 'DELETE', {});
+        if (generation !== account.generation()) return;
         state = { ...state, follows: state.follows.filter(item => item.policy_id !== policy.id), notifications: state.notifications.filter(item => item.policy_id !== policy.id) };
         renderAll(); if (state.activeId === policy.id && $('policy-dialog').open) renderDetail(); notify('已取消关注，不再检查这项政策');
       }
@@ -481,15 +502,18 @@
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `天津权益雷达-${policy.id}-申请清单.md`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   async function checkUpdates() {
+    const generation = account.generation();
     if (!state.follows.some(follow => follow.status !== 'completed')) {
       notify('目前没有待检查的事项。关注政策后，会为你核对原文与相关资料。'); return;
     }
     const trigger = $('check-updates'); trigger.disabled = true; trigger.textContent = '正在核对官方来源…';
     try {
       const data = await api('/api/check-updates', 'POST', {});
+      if (generation !== account.generation()) return;
       followRevision += 1;
       state = { ...state, notifications: data.notifications || [], service: { ...state.service, last_checked_at: data.checked_at } };
       await syncBootstrap();
+      if (generation !== account.generation()) return;
       updateShell(); renderNotifications();
       const failures = (data.results || []).filter(item => item.status === 'error' || item.status === 'failed').length;
       const searches = data.search_status?.runs || [];
@@ -506,7 +530,7 @@
     finally { trigger.disabled = false; trigger.replaceChildren(document.createTextNode('检查更新 '), node('span', '', '↻')); }
   }
   async function syncBootstrap() {
-    if (syncing || savingFollow) return;
+    if (syncing || savingFollow || (account.enabled() && !account.user())) return;
     syncing = true;
     const revision = followRevision;
     try {
@@ -535,24 +559,47 @@
       }
       if (newItems.length) notify(`你关注的事项有 ${newItems.length} 条新提醒，可在“我的跟进”查看。`);
     } catch {
-      $('connection-status').textContent = '本地服务连接中断 · 稍后自动重试';
+      if (revision === followRevision) $('connection-status').textContent = '本地服务连接中断 · 稍后自动重试';
     } finally { syncing = false; }
   }
   async function bootstrap() {
+    const revision = ++bootstrapRevision;
     $('retry-button').disabled = true; showError('');
     try {
+      if (!await account.initialize() || revision !== bootstrapRevision) return;
       const data = await api('/api/bootstrap');
+      if (revision !== bootstrapRevision) return;
       if (!Array.isArray(data.policies)) throw new Error('政策资料暂未准备好，请稍后重试。');
-      state = { ...state, policies: data.policies, follows: data.follows || [], notifications: data.notifications || [], service: data.service || {}, now: data.now || new Date().toISOString(), profile: readProfile() };
+      state = { ...state, policies: data.policies, follows: data.follows || [], notifications: data.notifications || [], service: data.service || {}, now: data.now || new Date().toISOString(), profile: account.enabled() ? data.profile || null : readProfile() };
       knownNotifications = new Set(state.notifications.map(item => item.id));
       renderAll();
       if (state.profile) {
         try { await discover(state.profile); }
         catch (error) { $('search-note').textContent = error.message; $('search-note').hidden = false; }
       }
-    } catch (error) { showError(error.message); $('connection-status').textContent = '本地服务暂未连接'; $('policy-list').replaceChildren(empty('暂时连接不到政策资料', '请确认本地服务正在运行，然后点击上方“重新连接”。')); }
-    finally { $('retry-button').disabled = false; }
+    } catch (error) { if (revision === bootstrapRevision) { showError(error.message); $('connection-status').textContent = '本地服务暂未连接'; $('policy-list').replaceChildren(empty('暂时连接不到政策资料', '请确认服务正在运行，然后点击上方“重新连接”。')); } }
+    finally { if (revision === bootstrapRevision) $('retry-button').disabled = false; }
   }
+  function resetAccountView() {
+    bootstrapRevision += 1; followRevision += 1;
+    state = { ...state, policies: [], follows: [], notifications: [], service: {}, profile: null, activeId: null, view: 'discover', step: 0, draft: {}, busy: false };
+    conditionDrafts = {}; editingConditions = null; knownNotifications = new Set();
+    savingFollow = false; savingConditions = false; syncing = false;
+    clearTimeout(toastTimer); $('toast').hidden = true;
+    document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
+    $('detail-content').replaceChildren(); $('detail-actions').replaceChildren();
+    $('search-note').replaceChildren(); $('search-note').hidden = true;
+    $('updates-title').closest('section').querySelector('.update-status')?.remove();
+    $('profile-button').disabled = false; renderAll(); switchView('discover');
+  }
+  document.addEventListener('policy-account-change', () => {
+    resetAccountView(); bootstrap();
+    if (!account.user()) $('auth-username').focus({ preventScroll: true });
+  });
+  document.addEventListener('policy-key-change', event => {
+    state = { ...state, service: { ...state.service, search_configured: event.detail.configured } };
+    $('search-note').replaceChildren(); $('search-note').hidden = true; updateShell(); syncBootstrap();
+  });
   $('profile-button').addEventListener('click', openWizard);
   $('discover-tab').addEventListener('click', () => switchView('discover'));
   $('follow-tab').addEventListener('click', () => switchView('follow'));
@@ -562,6 +609,7 @@
   $('wizard-close').addEventListener('click', () => $('wizard-dialog').close());
   $('detail-close').addEventListener('click', () => $('policy-dialog').close());
   $('policy-dialog').addEventListener('close', () => {
+    if (account.enabled() && !account.user()) return;
     const inFollow = state.view === 'follow';
     const row = $(inFollow ? 'follow-list' : 'policy-list').querySelector(`[data-policy-id="${CSS.escape(state.activeId || '')}"]`);
     const trigger = row?.querySelector(inFollow ? '.follow-open' : '.row-action');

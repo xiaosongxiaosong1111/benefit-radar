@@ -171,8 +171,8 @@ def decompose_document(document: dict) -> dict:
     }
 
 
-def source_status() -> dict:
-    key = os.environ.get(API_KEY_ENV, "").strip()
+def source_status(api_key: str | None = None) -> dict:
+    key = (os.environ.get(API_KEY_ENV, "") if api_key is None else api_key).strip()
     configured = 8 <= len(key) <= 512 and not any(c.isspace() or unicodedata.category(c).startswith("C") for c in key)
     return {"configured": configured, "provider": "元宝搜索 SearchPro", "message": "联网检索已配置" if configured else "官方资料预览 · 联网检索未启用"}
 
@@ -196,20 +196,21 @@ def _search_results(pages: list) -> list[dict]:
     return results
 
 
-def search_official(query: str, freshness: str | None = None) -> dict:
+def search_official(query: str, freshness: str | None = None, *, api_key: str | None = None) -> dict:
     result = {"status": "not_configured", "query": query, "request_id": None, "results": [],
               "message": "联网检索未启用；当前展示已整理的官方资料。"}
     if not isinstance(query, str) or not query.strip() or len(query.encode("utf-8")) > 1500:
         raise SourceError("搜索词为空或过长。")
     if freshness is not None and not FRESHNESS.fullmatch(freshness):
         raise SourceError("搜索时间范围不正确。")
-    if not source_status()["configured"]:
+    key = os.environ.get(API_KEY_ENV, "") if api_key is None else api_key
+    if not source_status(api_key=key)["configured"]:
         return result
     payload = {"Query": query.strip(), "Site": "tj.gov.cn"}
     if freshness:
         payload["Freshness"] = freshness
     request = Request(API_URL, data=json.dumps(payload, ensure_ascii=False).encode(), method="POST", headers={
-        "Authorization": "Bearer " + os.environ[API_KEY_ENV].strip(), "Content-Type": "application/json; charset=UTF-8",
+        "Authorization": "Bearer " + key.strip(), "Content-Type": "application/json; charset=UTF-8",
     })
     try:
         with _open_search(request, timeout=12) as response:
