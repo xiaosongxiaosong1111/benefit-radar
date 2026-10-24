@@ -193,5 +193,3 @@ async function cleanup() {
   console.log('Frontend E2E: ' + checks + ' assertions passed.');
   console.log('Frontend E2E passed: profile, tri-state matching, questions, follow, materials, status, persistence, export, cancel, source-change polling, notification deduplication, error recovery and responsive layouts.');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(cleanup);
-
-
