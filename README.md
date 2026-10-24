@@ -2,8 +2,6 @@
   <img src="docs/assets/cover-yuanbao-ai.png" alt="元宝 AI 与权益雷达：把政策变成办事清单，全国视野，天津试点。" width="100%">
 </p>
 
-<p align="center"><sub>AI 辅助创作的概念封面 · 当前仅支持天津试点 · 下方展示实际运行界面</sub></p>
-
 <h1 align="center">权益雷达 <sub>Benefit Radar</sub></h1>
 
 <p align="center">
