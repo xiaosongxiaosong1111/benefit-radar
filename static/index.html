@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#184e43">
+  <meta name="description" content="从天津官方政策里，找到与你有关的支持。看懂条件、准备材料、跟进申请，留意重要变化。">
+  <title>天津权益雷达 · 与你有关的，替你留意着</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app-model.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="site-header shell">
+    <a class="brand" href="#discover" aria-label="天津权益雷达首页">
+      <svg class="brand-icon" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="16" r="11"/><circle cx="20" cy="16" r="3"/><path d="M20 5v8m0 6v8M9 16h8m6 0h8M12 8l6 6m4 4 6 6M28 8l-6 6m-4 4-6 6M20 27l-7 9m7-9 7 9M5 36h30"/></svg>
+      <span>权益雷达<span class="brand-city">天津</span></span>
+    </a>
+    <nav class="nav" aria-label="主导航">
+      <button class="nav-link active" id="discover-tab" type="button" aria-current="page">发现权益</button>
+      <button class="nav-link" id="follow-tab" type="button">我的跟进<span class="nav-count" id="follow-count" hidden></span></button>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <div class="global-error" id="global-error" role="alert" hidden><p id="error-copy"></p><button class="text-button" id="retry-button" type="button">重新连接 →</button></div>
+    <section id="discover-view" aria-labelledby="hero-title">
+      <div class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="small-line"></span> 一座城，一点更贴心的支持</p>
+          <h1 id="hero-title">与你有关的，<br>替你<span class="accent-word">留意着。</span></h1>
+          <p class="hero-description" id="hero-description">补贴、保障、办事机会，从官方政策里，<br class="desktop-break">找到值得你关注的那一份。</p>
+          <button class="primary-button hero-button" id="profile-button" type="button">看看我能申请什么 <span aria-hidden="true">↗</span></button>
+          <p class="privacy-line" id="profile-note">回答几个小问题 · 无需姓名、证件或联系方式</p>
+        </div>
+        <div class="hero-art" aria-hidden="true">
+          <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
+          <div class="art-spark spark-one">✳</div><div class="art-spark spark-two">+</div>
+          <div class="paper-shadow"></div>
+          <div class="policy-paper">
+            <div class="paper-top"><span>TIANJIN</span><span>个人权益手册</span></div>
+            <div class="paper-glyph">津</div>
+            <div class="paper-rule"></div>
+            <div class="paper-title">生活向前，<br>支持刚好在身边。</div>
+            <div class="paper-bottom"><span>发现 · 看懂 · 办好</span><span class="paper-seal">与你有关</span></div>
+          </div>
+          <div class="floating-note"><span class="note-check">✓</span><span>每一份支持<br><strong>都有据可循</strong></span></div>
+        </div>
+      </div>
+
+      <section class="policy-section" aria-labelledby="policy-list-title">
+        <div class="section-heading">
+          <div><p class="eyebrow">从这里，开始了解</p><h2 id="policy-list-title">值得留意的支持</h2></div>
+          <span class="quiet" id="catalog-caption">天津 · 官方公开资料</span>
+        </div>
+        <div class="search-note" id="search-note" role="status" hidden></div>
+        <div class="policy-list" id="policy-list" aria-live="polite"><div class="loading-placeholder"><span class="loading-dot"></span>正在整理官方政策资料</div></div>
+        <p class="list-footnote">初步匹配帮助你缩小查找范围，申请资格由经办机构审核。每项政策均可查看官方依据。</p>
+      </section>
+      <div class="bottom-promise"><span class="promise-mark">↗</span><p>少一点四处查找，<strong>多一点心里有数。</strong></p><span class="promise-place">天津 · 为生活中的下一步</span></div>
+    </section>
+
+    <section id="follow-view" aria-labelledby="follow-title" hidden>
+      <div class="follow-intro"><p class="eyebrow">MY NEXT STEPS</p><h1 id="follow-title">值得办的事，<br>一件件<span class="accent-word">办好。</span></h1><p>准备材料、记录进度，与你有关的变化也放在这里。</p></div>
+      <div class="follow-workspace">
+        <section class="follow-primary" aria-labelledby="follow-list-title">
+          <div class="section-heading follow-heading"><h2 id="follow-list-title">我的申请清单</h2><span class="quiet" id="follow-summary"></span></div>
+          <div id="follow-list" class="follow-list"></div>
+        </section>
+        <section class="updates-section" aria-labelledby="updates-title">
+          <div class="section-heading"><div><p class="eyebrow">只留意重要的变化</p><h2 id="updates-title">政策与期限提醒</h2></div><button class="text-button" id="check-updates" type="button">检查更新 <span aria-hidden="true">↻</span></button></div>
+          <p class="monitor-note" id="monitor-note"></p>
+          <div id="notifications" class="notification-list"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer shell"><div><span class="footer-dot"></span>官方公开来源 · 元宝搜索提供检索支持</div><span id="connection-status" role="status">正在连接本地服务</span></footer>
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <dialog id="wizard-dialog" class="wizard-dialog" aria-labelledby="wizard-title">
+    <div class="wizard-head"><span class="eyebrow">认识你的下一步</span><button class="icon-button" id="wizard-close" type="button" aria-label="关闭情况填写">×</button></div>
+    <div class="step-progress" id="step-progress" aria-hidden="true"><span></span><span></span><span></span></div>
+    <p class="step-count" id="step-count">01 / 03</p><h2 id="wizard-title"></h2><p class="wizard-description" id="wizard-description"></p>
+    <form id="wizard-form"><div id="wizard-options" class="wizard-options"></div><p id="wizard-error" class="inline-error" role="alert" hidden></p><div class="wizard-actions"><button class="text-button" id="wizard-back" type="button">← 上一步</button><button class="primary-button" id="wizard-next" type="submit">继续 →</button></div></form>
+    <p class="wizard-privacy">你的情况仅保存在当前浏览器。不会上传姓名、证件或联系方式。</p>
+  </dialog>
+
+  <dialog id="policy-dialog" class="policy-dialog" aria-labelledby="detail-title">
+    <div class="detail-topbar"><span class="eyebrow">看懂一份支持</span><button class="icon-button" id="detail-close" type="button" aria-label="关闭政策详情">×</button></div>
+    <div class="detail-content" id="detail-content"></div>
+    <div class="detail-actions" id="detail-actions"></div>
+  </dialog>
+</body>
+</html>

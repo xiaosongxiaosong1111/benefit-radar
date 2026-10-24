@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="488" viewBox="0 0 1440 488" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">权益雷达：条件核对与资料发现</title>
+  <desc id="description">上方链路：用户情况通过已整理官方目录进行条件核对，形成材料清单并跟进申请。下方链路：公开政策关键词经元宝SearchPro检索，核对官方原文与候选线索，形成待复核与变化提醒。搜索结果不直接改写资格判断。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L6 4L1 7" stroke="#94A58A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <rect x="0.5" y="0.5" width="1439" height="487" rx="20" fill="#FAF9F6" stroke="#E0E5DC"/>
+  <g font-family="Segoe UI, PingFang SC, Microsoft YaHei, Arial, sans-serif">
+    <text x="64" y="63" fill="#233B33" font-size="29" font-weight="600">条件核对与资料发现</text>
+    <text x="64" y="100" fill="#606D62" font-size="17">核对有依据，发现有来源。两条链路，共同服务申请准备。</text>
+    <text x="1376" y="62" text-anchor="end" fill="#738267" font-size="12" letter-spacing="2">HOW IT WORKS</text>
+
+    <g stroke="#DCE4D5">
+      <rect x="64" y="144" width="283" height="114" rx="11" fill="#FFFFFF"/>
+      <rect x="407" y="144" width="283" height="114" rx="11" fill="#EDF3ED"/>
+      <rect x="750" y="144" width="283" height="114" rx="11" fill="#FFFFFF"/>
+      <rect x="1093" y="144" width="283" height="114" rx="11" fill="#FFFFFF"/>
+    </g>
+    <g stroke="#94A58A" stroke-width="1.5" marker-end="url(#arrow)">
+      <path d="M363 201H390"/>
+      <path d="M706 201H733"/>
+      <path d="M1049 201H1076"/>
+    </g>
+    <g fill="#184E43" font-size="22" font-weight="550">
+      <text x="86" y="189">用户情况</text>
+      <text x="429" y="189">已整理官方政策目录</text>
+      <text x="772" y="189">条件核对与材料清单</text>
+      <text x="1115" y="189">申请跟进</text>
+    </g>
+    <g fill="#606D62" font-size="16">
+      <text x="86" y="228">明确个人阶段与已知条件</text>
+      <text x="429" y="228">按已核验的政策规则初筛</text>
+      <text x="772" y="228">尚未确认的条件继续追问</text>
+      <text x="1115" y="228">保存材料进度与申请状态</text>
+    </g>
+
+    <g stroke="#DCE4D5">
+      <rect x="64" y="298" width="283" height="114" rx="11" fill="#FFFFFF"/>
+      <rect x="407" y="298" width="283" height="114" rx="11" fill="#184E43" stroke="#184E43"/>
+      <rect x="750" y="298" width="283" height="114" rx="11" fill="#FFFFFF"/>
+      <rect x="1093" y="298" width="283" height="114" rx="11" fill="#FFFFFF"/>
+    </g>
+    <g stroke="#94A58A" stroke-width="1.5" marker-end="url(#arrow)">
+      <path d="M363 355H390"/>
+      <path d="M706 355H733"/>
+      <path d="M1049 355H1076"/>
+    </g>
+    <g fill="#184E43" font-size="22" font-weight="550">
+      <text x="86" y="343">公开政策关键词</text>
+      <text x="429" y="343" fill="#FFFFFF">元宝 SearchPro</text>
+      <text x="772" y="343">官方原文与候选线索</text>
+      <text x="1115" y="343">待复核与变化提醒</text>
+    </g>
+    <g fill="#606D62" font-size="16">
+      <text x="86" y="382">公开检索，不带个人回答</text>
+      <text x="429" y="382" fill="#E6EEE5">检索官方来源，保留请求记录</text>
+      <text x="772" y="382">读取原文，核对来源与变化</text>
+      <text x="1115" y="382">提示关注，不自动确认申请资格</text>
+    </g>
+    <circle cx="70" cy="452" r="3" fill="#8B9F78"/>
+    <text x="84" y="458" fill="#606D62" font-size="16">搜索结果不直接改写资格判断；原文变化后，已整理条件会提示重新核对。</text>
+  </g>
+</svg>

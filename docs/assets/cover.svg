@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="560" viewBox="0 0 1440 560" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">权益雷达 · Benefit Radar</title>
+  <desc id="description">暖白与墨绿的权益雷达品牌封面，天津试点，本地优先。发现、核对、跟进。右侧为个人权益手册插画。</desc>
+  <defs>
+    <linearGradient id="paper" x1="941" y1="99" x2="1217" y2="441" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8F6EC"/>
+      <stop offset="1" stop-color="#F0F0E5"/>
+    </linearGradient>
+    <linearGradient id="wash" x1="994" y1="55" x2="1375" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E7EDDE" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#E7EDDE" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="1439" height="559" rx="22" fill="#FAF9F6" stroke="#E0E5DC"/>
+  <circle cx="1124" cy="273" r="219" fill="url(#wash)"/>
+  <g stroke="#184E43" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" transform="translate(74 58) scale(1.05)">
+    <circle cx="20" cy="16" r="11"/>
+    <circle cx="20" cy="16" r="3"/>
+    <path d="M20 5v8m0 6v8M9 16h8m6 0h8M12 8l6 6m4 4 6 6M28 8l-6 6m-4 4-6 6M20 27l-7 9m7-9 7 9M5 36h30"/>
+  </g>
+  <g font-family="Segoe UI, PingFang SC, Microsoft YaHei, Arial, sans-serif">
+    <text x="133" y="79" fill="#184E43" font-size="16" font-weight="600" letter-spacing="3.2">BENEFIT RADAR</text>
+    <text x="133" y="101" fill="#687268" font-size="12" letter-spacing="1.2">PERSONAL POLICY COMPANION</text>
+    <text x="78" y="220" fill="#233B33" font-size="76" font-weight="650" letter-spacing="-2">权益雷达</text>
+    <path d="M82 252H124" stroke="#184E43" stroke-width="2"/>
+    <text x="142" y="261" fill="#184E43" font-size="28" font-weight="400">与你有关的，替你留意着。</text>
+    <text x="81" y="312" fill="#606D62" font-size="19">从官方政策出发，找到支持，准备材料，跟进下一步。</text>
+    <rect x="80" y="355" width="108" height="35" rx="17.5" fill="#EAF0E4"/>
+    <text x="134" y="378" text-anchor="middle" fill="#184E43" font-size="14">天津试点</text>
+    <path d="M213 364V382" stroke="#CDD7C7"/>
+    <text x="238" y="378" fill="#606D62" font-size="13" font-weight="500" letter-spacing="2">LOCAL FIRST</text>
+    <path d="M80 436H714" stroke="#DCE2D6"/>
+    <g fill="#184E43" font-size="17" font-weight="500">
+      <circle cx="91" cy="477" r="10" fill="none" stroke="#9AAD8A"/>
+      <circle cx="91" cy="477" r="3" fill="#9AAD8A"/>
+      <text x="116" y="483">发现支持</text>
+      <path d="M232 477H269M262 472L269 477L262 482" fill="none" stroke="#A7B49B" stroke-width="1.5"/>
+      <path d="M301 472L306 477L316 467" fill="none" stroke="#184E43" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="331" y="483">核对条件</text>
+      <path d="M446 477H483M476 472L483 477L476 482" fill="none" stroke="#A7B49B" stroke-width="1.5"/>
+      <path d="M515 467H529V486H515Z M519 473H525 M519 478H525" fill="none" stroke="#184E43" stroke-width="1.5" stroke-linecap="round"/>
+      <text x="546" y="483">跟进申请</text>
+    </g>
+  </g>
+  <g stroke="#DCE3D2">
+    <circle cx="1121" cy="278" r="196"/>
+    <circle cx="1121" cy="278" r="151" stroke-dasharray="3 7"/>
+    <path d="M892 278H915 M1325 278H1348 M1121 50V73 M1121 482V505"/>
+  </g>
+  <rect x="984" y="107" width="277" height="350" rx="10" fill="#E5E9DB" transform="rotate(8 1122 282)"/>
+  <g transform="rotate(-5 1117 275)">
+    <rect x="965" y="92" width="289" height="359" rx="9" fill="url(#paper)" stroke="#D8DDCD"/>
+    <g font-family="Segoe UI, PingFang SC, Microsoft YaHei, Arial, sans-serif" fill="#718067">
+      <text x="995" y="126" font-size="10" letter-spacing="2">TIANJIN</text>
+      <text x="1144" y="126" font-size="11">个人权益手册</text>
+    </g>
+    <text x="1125" y="269" fill="#DDE4D0" font-family="Songti SC, SimSun, serif" font-size="134">津</text>
+    <path d="M996 250H1035" stroke="#728364" stroke-width="2"/>
+    <g fill="#3D543E" font-family="Songti SC, SimSun, serif" font-size="26">
+      <text x="996" y="292">生活向前，</text>
+      <text x="996" y="332">支持刚好在身边。</text>
+    </g>
+    <path d="M996 365H1222" stroke="#DAE0D1"/>
+    <text x="996" y="401" fill="#718067" font-family="Segoe UI, PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11" letter-spacing="1">发现 · 看懂 · 办好</text>
+    <circle cx="1199" cy="399" r="20" stroke="#A2B18F"/>
+    <text x="1199" y="403" fill="#718067" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="9" text-anchor="middle">与你有关</text>
+  </g>
+  <g transform="rotate(3 1286 388)">
+    <rect x="1199" y="351" width="174" height="76" rx="11" fill="#FFFFFF" stroke="#DCE3D5"/>
+    <circle cx="1230" cy="389" r="16" fill="#EDF3ED"/>
+    <path d="M1224 389L1228 393L1236 383" stroke="#184E43" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1257" y="382" fill="#687268" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="12">每一份支持</text>
+    <text x="1257" y="403" fill="#184E43" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="14" font-weight="600">都有据可循</text>
+  </g>
+</svg>
