@@ -10,7 +10,7 @@ const { once } = require('node:events');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const project = path.resolve(__dirname, '..');
 const python = process.env.PYTHON || (process.platform === 'win32' ? 'py' : 'python3');
-const password = require('node:crypto').randomBytes(24).toString('base64url');
+const password = '0' + String(require('node:crypto').randomInt(0, 100000)).padStart(5, '0');
 const keys = { admin: 'qa-controlled-admin-Z900', alice: 'qa-controlled-alice-A001', bob: 'qa-controlled-bob-B002', invalid: 'qa-controlled-invalid-X000', environment: 'qa-controlled-environment-NOPE' };
 const profileKey = 'tianjin-rights-profile-v1';
 const output = path.join(project, 'screenshots');
@@ -132,6 +132,7 @@ async function setupUsers(base) {
   for (const page of [pageA, pageB, admin]) page.on('pageerror', error => errors.push(String(error)));
   for (const page of [pageA, pageB]) await page.addInitScript(({ key }) => localStorage.setItem(key, JSON.stringify({ stage: 'student', graduation_year: 1999, tianjin_college: true })), { key: profileKey });
   await pageA.goto(base); await pageA.waitForSelector('#auth-view:not([hidden])');
+  assert.equal(await pageA.locator('#auth-password').getAttribute('minlength'), '6', 'Six-digit passwords retain a leading zero and meet the displayed minimum');
   assert.equal((await pageA.request.get(base + '/api/bootstrap')).status(), 401, 'Anonymous users cannot read personal business data');
   assert.equal((await session(pageA, base)).user, null);
   await pageA.screenshot({ path: path.join(output, 'accounts-login-desktop.png') });

@@ -62,6 +62,29 @@ class AccountStoreTests(unittest.TestCase):
             self.user("ALICE")
         self.assertEqual(error.exception.status, 409)
 
+    def test_six_digit_passwords_can_register_and_login_including_leading_zero(self):
+        passwords = (
+            ("numeric", str(100_000 + secrets.randbelow(900_000))),
+            ("leadingzero", "0" + str(10_000 + secrets.randbelow(90_000))),
+        )
+        for username, password in passwords:
+            with self.subTest(username=username):
+                user = self.store.register(username, password)
+                self.assertEqual(self.store.login(username, password), user)
+                self.assertEqual(AccountStore(self.root).login(username, password), user)
+
+    def test_five_digit_password_is_still_rejected_without_creating_account(self):
+        password = str(10_000 + secrets.randbelow(90_000))
+        with self.assertRaises(AccountError) as error:
+            self.store.register("toosmall", password)
+        self.assertEqual(error.exception.code, "invalid_password")
+        self.assertEqual(self.store.list_user_ids(), [])
+
+    def test_existing_long_password_can_still_login_after_restarting_store(self):
+        user = self.user("legacy")
+        restarted = AccountStore(self.root, clock=lambda: self.now)
+        self.assertEqual(restarted.login("legacy", PASSWORD), user)
+
     def test_admin_bootstrap_is_explicit_idempotent_and_never_promotes_existing_user(self):
         self.assertFalse(self.store.has_admin())
         ordinary = self.user()

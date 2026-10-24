@@ -136,8 +136,8 @@ class AccountStore:
     def _validate_credentials(username, password) -> str:
         if not isinstance(username, str) or not USERNAME.fullmatch(username):
             raise AccountError("invalid_username", "用户名需为3至32位字母、数字、下划线或短横线。")
-        if not isinstance(password, str) or not 12 <= len(password) <= 128 or any(unicodedata.category(character).startswith("C") for character in password):
-            raise AccountError("invalid_password", "密码需为12至128位，且不能包含控制字符。")
+        if not isinstance(password, str) or not 6 <= len(password) <= 128 or any(unicodedata.category(character).startswith("C") for character in password):
+            raise AccountError("invalid_password", "密码需为6至128位，且不能包含控制字符。")
         return username.lower()
 
     def _create_user(self, username, password, *, admin=False) -> dict:
@@ -277,7 +277,7 @@ def main(argv=None) -> int:
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--create-admin", metavar="USERNAME", required=True)
     args = parser.parse_args(argv)
-    password = getpass.getpass("管理员初始密码（至少12位）：")
+    password = getpass.getpass("管理员初始密码（至少6位）：")
     if password != getpass.getpass("再次输入密码："):
         parser.error("两次密码不一致。")
     try:
