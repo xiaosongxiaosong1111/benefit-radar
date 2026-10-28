@@ -109,6 +109,23 @@ class PolicyHTTPTests(unittest.TestCase):
         finally:
             client.close()
 
+    def test_match_rechecks_local_rules_without_search_or_profile_echo(self):
+        with patch("policy_service.search_official") as search:
+            status, _, body = self.request("POST", "/api/match", {"profile": {"stage": "other", "nonlocal_registration": None}})
+        self.assertEqual(status, 200)
+        self.assertEqual(set(json.loads(body)), {"policies"})
+        self.assertEqual(len(json.loads(body)["policies"]), 3)
+        self.assertNotIn(b"\"profile\"", body)
+        search.assert_not_called()
+
+    def test_match_rejects_unknown_fields_and_cross_origin_requests(self):
+        for payload in ({}, {"profile": {}, "user_id": "someone-else"}, {"profile": {"real_name": "private-name"}}, {"profile": {"graduation_year": True}}):
+            with self.subTest(payload=payload):
+                status, _, _ = self.request("POST", "/api/match", payload)
+                self.assertEqual(status, 400)
+        status, _, _ = self.request("POST", "/api/match", {"profile": {}}, {"Origin": "https://attacker.example"})
+        self.assertEqual(status, 421)
+
     def test_check_without_follows_is_honest_and_local(self):
         with patch("policy_service.fetch_document") as fetch:
             status, _, body = self.request("POST", "/api/check-updates")

@@ -35,6 +35,22 @@
     const items = materialGroups(policy, profile).required;
     return items.length ? Math.round(items.filter(item => follow?.checked_materials?.includes(item.id)).length / items.length * 100) : 0;
   }
+  function nextStep(policy, follow, profile, now) {
+    if (follow?.status === 'completed') return { kind: 'progress', label: '查看办理记录', text: '已记录完成，可回看材料和办理进度。' };
+    if (policy.source_review?.status === 'needs_review') return { kind: 'source', label: '核对最新依据', text: '官方原文有变化，请先核对最新要求与你的申请是否有关。' };
+    if (follow?.status === 'submitted') return { kind: 'progress', label: '记录办理进展', text: '已记录提交，请留意经办机构反馈；需要补件时可继续更新材料。' };
+    if ((policy.deadline && daysUntil(policy.deadline, now) < 0) || (policy.valid_until && daysUntil(policy.valid_until, now) < 0) || policy.match?.status === 'expired') {
+      return { kind: 'source', label: '查看官方依据', text: '当前申请期或政策有效期已结束，请核对新的官方通知。' };
+    }
+    if (policy.effective_at && daysUntil(policy.effective_at, now) > 0) return { kind: 'source', label: '查看施行安排', text: '当前政策尚未施行，请先核对官方公布的办理安排。' };
+    if (policy.match?.status === 'unlikely') return { kind: 'conditions', label: '重新核对条件', text: '你已填的情况与部分条件不符，请先核对这些回答。' };
+    if (policy.match?.status !== 'possible') return { kind: 'conditions', label: '补充申请条件', text: '还有申请条件未确认，先核对是否适用，再准备材料。' };
+    const required = materialGroups(policy, profile).required;
+    if (!required.length) return { kind: 'source', label: '核对材料要求', text: '材料要求仍需核对，请先查看官方说明。' };
+    const missing = required.filter(item => !follow?.checked_materials?.includes(item.id));
+    if (missing.length) return { kind: 'materials', label: '准备下一项材料', text: `还差 ${missing.length} 项基础材料，下一项：${missing[0].label}。`, materialId: missing[0].id };
+    return { kind: 'apply', label: '核对并前往办理', text: '基础材料已勾选完成，请核对按情形补充材料和办理步骤，再到官方渠道申请。' };
+  }
   function markdown(policy, follow, profile) {
     const lines = ['# ' + policy.title, '', '> 天津权益雷达 · 申请准备清单', '',
       '- 支持内容：' + (policy.benefit || '以官方规定为准'),
@@ -56,7 +72,7 @@
       '> 本清单用于准备申请，最终资格和材料要求以经办机构审核及官方最新通知为准。', '');
     return lines.join('\n');
   }
-  const api = Object.freeze({ safeUrl, daysUntil, matchLabel, sortPolicies, materialGroups, progress, markdown, stages });
+  const api = Object.freeze({ safeUrl, daysUntil, matchLabel, sortPolicies, materialGroups, progress, nextStep, markdown, stages });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PolicyUI = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

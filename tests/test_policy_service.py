@@ -145,6 +145,68 @@ class PolicyServiceTests(unittest.TestCase):
         notice = next(value for value in result["notifications"] if value["kind"] == "source_changed")
         self.assertEqual(notice["diff"], [{"before": "官方标注有效性：有效", "after": "官方标注有效性：失效"}])
 
+    def test_published_review_matching_valid_source_clears_pending_review(self):
+        self.service.follow(POLICY["id"])
+        reviewed = {**POLICY, "reviewed_source_fingerprint": "original"}
+        original = {"body": "原官方正文", "fingerprint": "original", "validity": "有效"}
+        current = {"body": "更新后的官方正文", "fingerprint": "current", "validity": "有效"}
+        with patch("policy_service.fetch_document", side_effect=[original, current, current]):
+            self.service._check_document(reviewed)
+            changed = self.service._check_document(reviewed)
+            self.assertTrue(changed["needs_review"])
+            published = {**reviewed, "reviewed_source_fingerprint": "current"}
+            confirmed = self.service._check_document(published)
+        self.assertFalse(confirmed["needs_review"])
+        possible = {**published, "match": {"status": "possible", "reasons": [], "questions": []}}
+        result = self.service.enrich_policies([possible])[0]
+        self.assertEqual(result["match"]["status"], "possible")
+        self.assertFalse(result["source_review"]["rules_verified"])
+        notices = [item for item in self.service.notifications() if item["kind"] == "source_changed"]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("并不自动证明", notices[0]["summary"])
+
+    def test_pending_review_remains_without_matching_review_and_explicit_validity(self):
+        cases = [(None, "有效"), ("original", "有效"), ("current", "未标明"),
+                 ("current", "失效"), ("current", "部分失效"), ("current", None)]
+        for number, (fingerprint, validity) in enumerate(cases):
+            with self.subTest(fingerprint=fingerprint, validity=validity):
+                service = PolicyService(self.path.with_name(f"review-{number}.sqlite3"), clock=lambda: self.now)
+                original = {"body": "原官方正文", "fingerprint": "original", "validity": "有效"}
+                current = {"body": "更新后的官方正文", "fingerprint": "current",
+                           **({"validity": validity} if validity is not None else {})}
+                reviewed = {**POLICY, "reviewed_source_fingerprint": "original"}
+                with patch("policy_service.fetch_document", side_effect=[original, current, current]):
+                    service._check_document(reviewed)
+                    service._check_document(reviewed)
+                    result = service._check_document({**POLICY, "reviewed_source_fingerprint": fingerprint})
+                self.assertTrue(result["needs_review"])
+
+    def test_local_match_refreshes_review_status_without_search_or_profile_writes(self):
+        service = PolicyService(self.path, clock=lambda: self.now, persist_profile=True)
+        profile = {"stage": "student", "graduation_year": 2027, "tianjin_college": True,
+                   "support_condition": True, "seeking_work": True, "grant_not_received": True}
+        service._setting("profile", profile)
+        reviewed = {**POLICY, "reviewed_source_fingerprint": "original"}
+        original = {"body": "原官方正文", "fingerprint": "original", "validity": "有效"}
+        current = {"body": "更新后的官方正文", "fingerprint": "current", "validity": "有效"}
+        with patch("policy_service.fetch_document", side_effect=[original, current, current]), \
+                patch.object(service, "_search") as search, patch("policy_service.search_official") as provider:
+            service._check_document(reviewed)
+            service._check_document(reviewed)
+            pending = next(item for item in service.match_profile(profile) if item["id"] == POLICY["id"])
+            self.assertEqual(pending["match"]["status"], "needs_info")
+            service._check_document({**reviewed, "reviewed_source_fingerprint": "current"})
+            refreshed = next(item for item in service.match_profile(profile) if item["id"] == POLICY["id"])
+            self.assertEqual(refreshed["match"]["status"], "possible")
+            incomplete = next(item for item in service.match_profile({**profile, "support_condition": None})
+                              if item["id"] == POLICY["id"])
+            self.assertEqual(incomplete["match"]["status"], "needs_info")
+            self.assertIn("support_condition", {question["key"] for question in incomplete["match"]["questions"]})
+        search.assert_not_called()
+        provider.assert_not_called()
+        self.assertEqual(service._get_setting("profile"), profile)
+        self.assertIsNone(service._get_setting("search_runs"))
+
     def test_search_cache_does_not_send_private_answers_or_repeat_provider_calls(self):
         response = {"status": "ok", "request_id": "request-1", "results": [], "query": "public query"}
         with patch("policy_service.match_policies", return_value=[]), patch("policy_service.search_official", return_value=response) as search:
@@ -172,6 +234,69 @@ class PolicyServiceTests(unittest.TestCase):
         self.assertFalse(notice["digest"]["reviewed"])
         self.assertIn("待核对", notice["title"])
         self.assertEqual(updated["search_status"]["runs"][0]["request_id"], "second")
+
+    def test_search_candidates_are_processed_in_batches_without_marking_unprocessed_seen(self):
+        self.service.follow(POLICY["id"])
+        pages = [{"url": f"https://hrss.tj.gov.cn/new-{number}.html", "title": f"相关通知{number}"}
+                 for number in range(5)]
+        baseline = {"status": "ok", "results": [{"url": POLICY["source_url"], "title": "原通知"}]}
+        current = {"status": "ok", "results": [*baseline["results"], *pages]}
+        digest = {"reviewed": False, "summary": "官方原文摘录"}
+        with patch.object(self.service, "_search", side_effect=[baseline, current, current, current, current]), \
+                patch("policy_service.fetch_document", return_value={"body": "官方原文正文"}) as fetch, \
+                patch("policy_service.decompose_document", return_value=digest):
+            for count in (0, 2, 4, 5, 5):
+                self.service._check_search(POLICY)
+                notices = [item for item in self.service.notifications() if item["kind"] == "review"]
+                self.assertEqual(len(notices), count)
+                self.assertEqual(len(self.service._get_setting("seen_urls:" + POLICY["id"])), count + 1)
+                self.assertEqual(fetch.call_count, count)
+        self.assertEqual({call.args[0] for call in fetch.call_args_list}, {page["url"] for page in pages})
+
+    def test_search_candidate_fetch_failure_can_retry_and_publish_digest_once(self):
+        self.service.follow(POLICY["id"])
+        self.service._setting("seen_urls:" + POLICY["id"], [])
+        page = {"url": "https://hrss.tj.gov.cn/retry.html", "title": "相关补充通知"}
+        digest = {"reviewed": False, "summary": "重试后取得官方摘录", "requirements": ["申请要求"]}
+        with patch.object(self.service, "_search", return_value={"status": "ok", "results": [page]}), \
+                patch("policy_service.fetch_document", side_effect=[RuntimeError("temporary"), {"body": "官方原文正文"}]) as fetch, \
+                patch("policy_service.decompose_document", return_value=digest):
+            self.service._check_search(POLICY)
+            self.assertEqual(self.service._get_setting("seen_urls:" + POLICY["id"]), [])
+            self.service._check_search(POLICY)
+            self.service._check_search(POLICY)
+        self.assertEqual(fetch.call_count, 2)
+        notices = [item for item in self.service.notifications() if item["kind"] == "review"]
+        self.assertEqual(len(notices), 1)
+        self.assertEqual(notices[0]["digest"], digest)
+        self.assertEqual(self.service._get_setting("seen_urls:" + POLICY["id"]), [page["url"]])
+
+    def test_failed_candidates_rotate_behind_pending_links_and_survive_restart(self):
+        self.service.follow(POLICY["id"])
+        self.service._setting("seen_urls:" + POLICY["id"], [])
+        pages = [{"url": f"https://hrss.tj.gov.cn/new-{number}.html", "title": f"相关通知{number}"}
+                 for number in range(5)]
+        unavailable = {pages[0]["url"], pages[1]["url"]}
+
+        def fetch_candidate(url):
+            if url in unavailable:
+                raise RuntimeError("temporary")
+            return {"body": "官方原文正文"}
+
+        responses = [{"status": "ok", "results": pages}, *[{"status": "ok", "results": []}] * 3]
+        with patch.object(PolicyService, "_search", side_effect=responses), \
+                patch("policy_service.fetch_document", side_effect=fetch_candidate) as fetch, \
+                patch("policy_service.decompose_document", return_value={"reviewed": False}):
+            self.service._check_search(POLICY)
+            self.assertEqual(fetch.call_count, 2)
+            restarted = PolicyService(self.path, clock=lambda: self.now)
+            for attempts, count in ((4, 2), (6, 3), (8, 3)):
+                restarted._check_search(POLICY)
+                self.assertEqual(fetch.call_count, attempts)
+                notices = [item for item in restarted.notifications() if item["kind"] == "review"]
+                self.assertEqual(len(notices), count)
+        self.assertEqual(set(restarted._get_setting("seen_urls:" + POLICY["id"])),
+                         {page["url"] for page in pages[2:]})
 
     def test_invalid_updates_missing_follow_and_expired_reminders(self):
         for change in ({}, {"arbitrary": True}, {"checked_materials": "identity"}):

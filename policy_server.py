@@ -276,10 +276,11 @@ class PolicyHandler(BaseHTTPRequestHandler):
         service = self.server.tenants.service_for(session["user"]["id"]) if session else self.server.service
         if self.command == "POST" and path == "/api/analyze":
             return self._legacy_analyze(payload)
-        if self.command == "POST" and path == "/api/discover":
+        if self.command == "POST" and path in {"/api/discover", "/api/match"}:
             if set(payload) != {"profile"}:
                 raise RequestError("invalid_request", "请提供问答选项。")
-            return service.discover(_validate_facts(payload["profile"]))
+            profile = _validate_facts(payload["profile"])
+            return service.discover(profile) if path == "/api/discover" else {"policies": service.match_profile(profile)}
         if self.command == "POST" and path == "/api/follows":
             if set(payload) != {"policy_id"} or not isinstance(payload["policy_id"], str):
                 raise RequestError("invalid_request", "请选择要关注的政策。")

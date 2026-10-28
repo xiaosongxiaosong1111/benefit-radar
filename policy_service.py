@@ -200,8 +200,11 @@ class PolicyService:
             **({"profile": self._get_setting("profile")} if self.persist_profile else {}),
         }
 
+    def match_profile(self, profile: dict) -> list[dict]:
+        return self.enrich_policies(match_policies(profile, today=self.clock().astimezone(CHINA).date()))
+
     def discover(self, profile: dict) -> dict:
-        policies = self.enrich_policies(match_policies(profile, today=self.clock().astimezone(CHINA).date()))
+        policies = self.match_profile(profile)
         if self.persist_profile:
             self._setting("profile", dict(profile))
         # Search receives only public policy keywords, never the visitor's answers.
@@ -251,7 +254,8 @@ class PolicyService:
             invalid = validity in {"失效", "已废止", "废止", "部分失效"}
             reviewed_fingerprint = policy.get("reviewed_source_fingerprint")
             differs_from_review = bool(not previous and reviewed_fingerprint and reviewed_fingerprint != document["fingerprint"])
-            needs_review = bool(changed or invalid or differs_from_review or (previous and previous["needs_review"]))
+            confirmed_review = bool(reviewed_fingerprint and reviewed_fingerprint == document["fingerprint"] and validity == "有效")
+            needs_review = bool(not confirmed_review and (changed or invalid or differs_from_review or (previous and previous["needs_review"])))
             db.execute("INSERT OR REPLACE INTO snapshots (policy_id, fingerprint, body, checked_at, needs_review, validity) VALUES (?, ?, ?, ?, ?, ?)", (policy["id"], document["fingerprint"], document["body"], self._now(), int(needs_review), validity))
         if changed:
             differences = _changes(previous["body"], document["body"])
@@ -282,20 +286,29 @@ class PolicyService:
         seen = self._get_setting(key)
         pages = evidence.get("results", [])
         urls = [value["url"] for value in pages]
-        if seen is not None:
-            candidates = [page for page in pages if page["url"] not in seen and page["url"] != policy["source_url"]]
+        if seen is None:
+            self._setting(key, sorted(set(urls))[-500:])
+        else:
+            pending_key = "pending_pages:" + policy["id"]
+            pending = self._get_setting(pending_key, [])
+            candidates = list({page["url"]: {"url": page["url"], "title": page["title"]}
+                               for page in [*pending, *pages]
+                               if page["url"] not in seen and page["url"] != policy["source_url"]}.values())
+            completed, retries = [], []
             for page in candidates[:2]:
-                if page["url"] not in seen and page["url"] != policy["source_url"]:
-                    try:
-                        digest = decompose_document(fetch_document(page["url"]))
-                    except Exception:
-                        digest = {"reviewed": False, "summary": "官方正文暂时无法读取，请打开来源核对。", "audience": [], "requirements": [], "materials": [], "timing": [], "actions": []}
-                    self._add_notification({
-                        "id": _digest("candidate:" + policy["id"] + page["url"]), "policy_id": policy["id"],
-                        "title": "发现相关官方资料，待核对", "summary": page["title"],
-                        "kind": "review", "source_url": page["url"], "diff": [], "digest": digest,
-                    })
-        self._setting(key, sorted(set((seen or []) + urls))[-500:])
+                try:
+                    digest = decompose_document(fetch_document(page["url"]))
+                except Exception:
+                    retries = [*retries, page]
+                    continue
+                self._add_notification({
+                    "id": _digest("candidate:" + policy["id"] + page["url"]), "policy_id": policy["id"],
+                    "title": "发现相关官方资料，待核对", "summary": page["title"],
+                    "kind": "review", "source_url": page["url"], "diff": [], "digest": digest,
+                })
+                completed = [*completed, page["url"]]
+            self._setting(key, sorted(set([*seen, *completed]))[-500:])
+            self._setting(pending_key, [*candidates[2:], *retries])
         return {"status": evidence.get("status"), "request_id": evidence.get("request_id")}
 
     def check_updates(self) -> dict:

@@ -59,7 +59,7 @@ class AccountsHTTPTests(unittest.TestCase):
         status, _, value = self.request("GET", "/api/auth/session")
         self.assertEqual(status, 200)
         self.assertEqual(value, {"enabled": True, "user": None, "csrf_token": None, "registration_open": True})
-        for method, route in [("GET", "/api/bootstrap"), ("GET", "/api/policies/job-seeking-grant"), ("POST", "/api/follows"), ("POST", "/api/account/api-key")]:
+        for method, route in [("GET", "/api/bootstrap"), ("GET", "/api/policies/job-seeking-grant"), ("POST", "/api/follows"), ("POST", "/api/match"), ("POST", "/api/account/api-key")]:
             with self.subTest(route=route):
                 status, _, value = self.request(method, route)
                 self.assertEqual(status, 401)

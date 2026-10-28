@@ -118,7 +118,7 @@ async function cleanup() {
   await page.reload();
   await page.waitForSelector('.policy-row');
   await page.locator('#follow-tab').click();
-  await page.getByRole('button', { name: '继续跟进' }).click();
+  await page.locator('.follow-open').click();
   assert.equal(await page.getByLabel('申请进度', { exact: true }).inputValue(), 'submitted');
   assert.equal(await page.locator('.material-item input').first().isChecked(), true);
   await page.getByLabel('申请进度', { exact: true }).selectOption('completed');
@@ -137,7 +137,7 @@ async function cleanup() {
   }
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.locator('#follow-tab').click();
-  await page.getByRole('button', { name: '继续跟进' }).click();
+  await page.locator('.follow-open').click();
   await page.getByText('更多跟进操作', { exact: true }).click();
   await page.getByRole('button', { name: '取消关注', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('.follow-status-label'));
@@ -160,7 +160,7 @@ async function cleanup() {
   }
   await page.waitForFunction(() => document.getElementById('toast').hidden);
   await page.screenshot({ path: path.join(output, 'updates-polished-desktop.png'), fullPage: true });
-  await page.getByRole('button', { name: '继续跟进' }).click();
+  await page.locator('.follow-open').click();
   // Controlled transport fixture verifies the UI response to a monitored source change.
   await page.route('**/api/bootstrap', async route => {
     const response = await route.fetch();

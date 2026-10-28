@@ -111,6 +111,11 @@ h1{font-size:clamp(42px,4.5vw,59px);font-weight:550;line-height:1.32;letter-spac
 .follow-item[data-status="preparing"] .follow-stage{color:var(--amber);background:var(--amber-soft)}
 .follow-item[data-status="completed"] .follow-stage{color:#fff;background:var(--green)}
 .follow-item p{color:var(--muted);font-size:12px;margin:0}
+.follow-next-step{margin-top:15px;padding:12px 14px;border-radius:8px;background:var(--green-soft)}
+.next-step-label{display:block;margin-bottom:4px;color:var(--green);font-size:11px;font-weight:650;letter-spacing:.08em}
+.follow-item .next-step-copy{color:var(--ink);font-size:14px;line-height:1.8}
+.follow-item[data-next-step="source"] .follow-next-step{background:var(--amber-soft)}
+.follow-item[data-next-step="source"] .next-step-label{color:var(--amber)}
 .progress-track{height:5px;background:#e7ebdf;border-radius:3px;margin:16px 0 9px;max-width:360px;overflow:hidden}
 .progress-fill{height:100%;background:#6b875a;border-radius:3px;transition:width .2s}
 .follow-open{border:1px solid #d0dacb;border-radius:6px;min-height:44px;padding:8px 16px;color:var(--green);background:transparent;font-size:13px}

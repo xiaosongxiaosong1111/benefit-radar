@@ -137,9 +137,12 @@
     state.follows.forEach(follow => {
       const policy = policyFor(follow.policy_id); if (!policy) return;
       const row = node('article', 'follow-item'); const body = node('div'); row.dataset.status = follow.status; row.dataset.policyId = policy.id;
+      const next = ui.nextStep(policy, follow, state.profile, state.now); row.dataset.nextStep = next.kind;
       const heading = node('div', 'follow-item-heading'); const stage = node('span', 'follow-stage', statusLabels[follow.status] || '准备中'); stage.dataset.state = follow.status;
       heading.append(node('h3', '', policy.title), stage); body.append(heading);
       body.append(node('p', 'follow-deadline', follow.status === 'completed' ? '已记录完成，本事项不再产生新提醒。' : deadlineCopy(policy)));
+      const task = node('div', 'follow-next-step');
+      task.append(node('span', 'next-step-label', follow.status === 'completed' ? '办理记录' : '下一步'), node('p', 'next-step-copy', next.text)); body.append(task);
       const progress = ui.progress(policy, follow, state.profile);
       const required = ui.materialGroups(policy, state.profile).required;
       const progressCopy = `基础材料 ${required.filter(item => follow.checked_materials.includes(item.id)).length} / ${required.length} 项已准备`;
@@ -147,7 +150,7 @@
       track.setAttribute('role', 'progressbar'); track.setAttribute('aria-label', `${policy.title}：基础材料准备进度`);
       track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', '100'); track.setAttribute('aria-valuenow', String(progress)); track.setAttribute('aria-valuetext', progressCopy);
       fill.style.width = `${progress}%`; track.append(fill); body.append(track, node('p', 'material-progress-copy', progressCopy));
-      row.append(body, button('继续跟进 →', 'follow-open', () => openPolicy(policy.id))); list.append(row);
+      row.append(body, button(next.label + ' →', 'follow-open', () => openNextStep(policy.id))); list.append(row);
     });
   }
   function renderNotifications() {
@@ -271,6 +274,19 @@
   function openPolicy(id) {
     state = { ...state, activeId: id }; renderDetail(); $('policy-dialog').showModal(); $('detail-content').scrollTop = 0;
   }
+  function openNextStep(id) {
+    const policy = policyFor(id); if (!policy) return;
+    const next = ui.nextStep(policy, followFor(id), state.profile, state.now);
+    if (next.kind === 'conditions' && state.profile && !policy.match?.questions?.length) editingConditions = id;
+    openPolicy(id);
+    let target;
+    if (next.kind === 'materials') target = $('detail-content').querySelector(`[data-material="${CSS.escape(next.materialId)}"]`);
+    else if (next.kind === 'conditions') target = $('detail-conditions').querySelector('input,button');
+    else if (next.kind === 'progress') target = $('detail-management').querySelector('select');
+    else if (next.kind === 'source') { $('detail-sources').open = true; target = $('detail-sources').querySelector('a,summary'); }
+    else { target = $('detail-steps').querySelector('h3'); target.tabIndex = -1; }
+    target?.scrollIntoView({ block: 'center' }); target?.focus({ preventScroll: true });
+  }
   function detailError(message) {
     $('detail-content').querySelector('.detail-error')?.remove();
     const error = node('p', 'detail-error', message); error.setAttribute('role', 'alert'); $('detail-content').append(error);
@@ -300,7 +316,7 @@
   }
   function renderQuestions(policy, parent) {
     if (!state.profile) {
-      const block = section('先核对，是否与你有关');
+      const block = section('先核对，是否与你有关'); block.id = 'detail-conditions';
       block.append(node('p', 'condition-summary', '直接核对这一项政策的条件，暂不确定的内容可以留空。'));
       const start = button('核对我是否适用 →', 'primary-button', async event => {
         if (savingConditions) return;
@@ -315,7 +331,7 @@
     }
     const editing = editingConditions === policy.id;
     const questions = editing ? editableQuestions(policy) : policy.match?.questions || [];
-    const block = section(editing ? '修改这一项的条件' : questions.length ? '再确认一点，判断更清楚' : '条件核对');
+    const block = section(editing ? '修改这一项的条件' : questions.length ? '再确认一点，判断更清楚' : '条件核对'); block.id = 'detail-conditions';
     if (!editing) {
       const edit = button('修改已填条件', 'text-button condition-edit-button', () => {
         editingConditions = policy.id;
@@ -408,7 +424,7 @@
   }
   function renderMaterials(policy, parent) {
     const follow = followFor(policy.id); const groups = ui.materialGroups(policy, state.profile);
-    const block = section('准备好，再出发');
+    const block = section('准备好，再出发'); block.id = 'detail-materials';
     const heading = block.querySelector('h3'); const wrap = node('div', 'material-heading'); heading.replaceWith(wrap);
     wrap.append(heading, node('span', '', `${groups.required.filter(item => follow?.checked_materials?.includes(item.id)).length} / ${groups.required.length} 项基础材料已准备`));
     if (!follow) block.append(node('p', 'subtle-note', '勾选材料会将这项政策加入“我的跟进”，便于下次继续。'));
@@ -425,7 +441,7 @@
   }
   function renderManagement(policy, parent) {
     const follow = followFor(policy.id); if (!follow) return;
-    const block = section('现在，进行到哪一步？'); const label = node('label', 'follow-status-label', '申请进度'); const select = document.createElement('select'); select.setAttribute('aria-label', '申请进度');
+    const block = section('现在，进行到哪一步？'); block.id = 'detail-management'; const label = node('label', 'follow-status-label', '申请进度'); const select = document.createElement('select'); select.setAttribute('aria-label', '申请进度');
     select.disabled = savingFollow;
     Object.entries(statusLabels).forEach(([value, text]) => { const option = node('option', '', text); option.value = value; option.selected = follow.status === value; select.append(option); });
     select.addEventListener('change', async () => {
@@ -470,10 +486,10 @@
     const relevance = section('为什么值得你留意');
     addList(relevance, policy.match?.reasons?.length ? policy.match.reasons : [policy.scope || '请先了解申请对象和条件，再结合个人情况核对。']); parent.append(relevance);
     renderQuestions(policy, parent); renderManagement(policy, parent); renderMaterials(policy, parent);
-    const steps = section('接下来怎么做'); addList(steps, policy.steps, 'step-list', true); parent.append(steps);
+    const steps = section('接下来怎么做'); steps.id = 'detail-steps'; addList(steps, policy.steps, 'step-list', true); parent.append(steps);
     if (policy.cautions?.length) { const caution = section('这些细节，也请留意'); addList(caution, policy.cautions, 'caution'); parent.append(caution); }
     const source = node('details', 'detail-section source-details'); source.append(node('summary', '', '官方依据与资料时间'));
-    source.dataset.detailKey = 'sources';
+    source.id = 'detail-sources'; source.dataset.detailKey = 'sources';
     source.append(node('p', '', `发布机构：${policy.issuer || '详见原文'}`), node('p', '', `公布日期：${dateCopy(policy.published_at)} · 资料核对：${dateCopy(policy.source_checked_at)}`));
     if (policy.effective_at) source.append(node('p', '', `施行日期：${dateCopy(policy.effective_at)}`));
     if (policy.source_review?.checked_at) {
@@ -483,7 +499,10 @@
     source.append(link('查看官方政策原文 ↗', policy.source_url)); parent.append(source);
     parent.append(node('p', 'detail-disclaimer', '以上用于初步了解和申请准备，不代表资格已获确认。最终资格、受理时间及材料要求，以经办机构审核和官方最新通知为准。'));
     const actions = $('detail-actions'); actions.replaceChildren();
-    if (followFor(policy.id)) actions.append(link('前往官方办理 ↗', policy.official_entry || policy.source_url, 'primary-button'), button('导出清单 ↓', 'text-button', () => exportPolicy(policy)));
+    if (followFor(policy.id)) {
+      const next = ui.nextStep(policy, followFor(policy.id), state.profile, state.now);
+      actions.append(link(next.kind === 'apply' ? '前往官方办理 ↗' : next.kind === 'source' ? '核对官方原文 ↗' : '查看官方办理要求 ↗', next.kind === 'source' ? policy.source_url : policy.official_entry || policy.source_url, 'primary-button'), button('导出清单 ↓', 'text-button', () => exportPolicy(policy)));
+    }
     else {
       const followButton = button(policy.match?.status === 'expired' ? '关注后续政策 →' : '加入我的跟进 →', 'primary-button', async event => {
         if (savingFollow) return;
@@ -530,18 +549,21 @@
     finally { trigger.disabled = false; trigger.replaceChildren(document.createTextNode('检查更新 '), node('span', '', '↻')); }
   }
   async function syncBootstrap() {
-    if (syncing || savingFollow || (account.enabled() && !account.user())) return;
+    if (syncing || savingFollow || savingConditions || (account.enabled() && !account.user())) return;
     syncing = true;
-    const revision = followRevision;
+    const revision = followRevision; const profile = state.profile;
     try {
       const data = await api('/api/bootstrap');
       // A slower poll must not replace a follow or notification write completed after it started.
-      if (revision !== followRevision || savingFollow) return;
+      if (revision !== followRevision || profile !== state.profile || savingFollow || savingConditions) return;
       const previousReview = policyFor(state.activeId)?.source_review;
       const previousFollow = followFor(state.activeId);
       const now = data.now || new Date().toISOString();
-      const policies = data.policies.map(policy => {
-        const previous = policyFor(policy.id); let match = previous?.match;
+      const reviewCleared = profile && data.policies.some(policy => policyFor(policy.id)?.source_review?.status === 'needs_review' && policy.source_review?.status !== 'needs_review');
+      const catalog = reviewCleared ? (await api('/api/match', 'POST', { profile })).policies : data.policies;
+      if (revision !== followRevision || profile !== state.profile || savingFollow || savingConditions) return;
+      const policies = catalog.map(policy => {
+        const previous = policyFor(policy.id); let match = reviewCleared ? policy.match : previous?.match;
         if (policy.source_review?.status === 'needs_review' && match?.status === 'possible') {
           match = { ...match, status: 'needs_info', reasons: ['官方原文有变化，申请条件需要重新复核。', ...match.reasons] };
         }
